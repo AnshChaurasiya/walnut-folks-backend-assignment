@@ -73,7 +73,7 @@ CREATE POLICY "Service role can access all transactions" ON public.transactions
 # Copy environment template
 cp .env.example .env
 
-# Edit .env with your Supabase credentials
+# Edit .env with your Supabase credentials and deployed URL
 ```
 
 Required environment variables:
@@ -81,8 +81,9 @@ Required environment variables:
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_KEY=your-anon-key
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-DEBUG=True
+DEBUG=False
 PROCESSING_DELAY_SECONDS=30
+DEPLOYED_URL=https://your-service.onrender.com
 ```
 
 ### 4. Run the Service
@@ -250,6 +251,12 @@ Webhook Received → Validate → Check Idempotency → Store (PROCESSING) → B
    - Render will build and deploy automatically
    - Your API will be available at: `https://your-service.onrender.com`
 
+5. **Keep-Alive Configuration**
+   - The service includes an automatic keep-alive mechanism that pings itself every 45 minutes
+   - This prevents Render's free tier from spinning down the instance due to inactivity
+   - Set `DEPLOYED_URL` in your environment variables to enable this feature
+   - Reduces cold start delays for status checks and subsequent requests
+
 #### Free Tier Benefits:
 - ✅ 750 hours/month free
 - ✅ Persistent service (no timeout limits)
@@ -295,6 +302,12 @@ Vercel works for simple APIs but has limitations:
 - Verify Supabase credentials in `.env`
 - Ensure database tables exist with correct schema
 - Check network connectivity
+
+**Slow Responses / Timeouts:**
+- On Render free tier, instances spin down after 15 minutes of inactivity
+- The keep-alive mechanism pings the service every 10 minutes to prevent spin-downs
+- Ensure `DEPLOYED_URL` is set correctly in environment variables
+- First request after spin-down may take ~1 minute for cold start
 
 **Slow Responses:**
 - Confirm background tasks are not blocking

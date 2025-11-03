@@ -51,10 +51,14 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     
+    # Deployment Settings
+    DEPLOYED_URL: Optional[str] = None
+    
     class Config:
         """Pydantic configuration class."""
         env_file = ".env"
         case_sensitive = True
+        extra = "allow"  # Allow extra fields in .env
 
 
 # Global settings instance

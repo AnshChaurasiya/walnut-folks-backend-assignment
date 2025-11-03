@@ -11,6 +11,8 @@ from fastapi.exceptions import RequestValidationError
 from contextlib import asynccontextmanager
 import uvicorn
 import time
+import asyncio
+import httpx
 
 from core.config import get_settings
 from api.v1.routes import initialize_v1_routes
@@ -29,9 +31,38 @@ async def lifespan(app: FastAPI):
     # Startup
     print(f"🚀 Starting {settings.APP_NAME} v{settings.VERSION}")
     print(f"🔧 Debug mode: {settings.DEBUG}")
+    
+    # Start keep-alive task if deployed URL is configured
+    keep_alive_task = None
+    if settings.DEPLOYED_URL:
+        keep_alive_task = asyncio.create_task(keep_alive(settings.DEPLOYED_URL))
+        print(f"🔄 Keep-alive task started for {settings.DEPLOYED_URL}")
+    
     yield
     # Shutdown
+    if keep_alive_task:
+        keep_alive_task.cancel()
     print("👋 Shutting down Transaction Webhook Service")
+
+
+async def keep_alive(url: str):
+    """
+    Background task to ping the deployed service periodically to prevent Render spin-down.
+    
+    Args:
+        url: The deployed service URL to ping
+    """
+    while True:
+        await asyncio.sleep(2700)  # Ping every 45 minutes (Render spins down after 15 min inactivity)
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.get(f"{url}/")
+                if response.status_code == 200:
+                    print("🔄 Keep-alive ping successful")
+                else:
+                    print(f"🔄 Keep-alive ping failed with status {response.status_code}")
+        except Exception as e:
+            print(f"🔄 Keep-alive ping failed: {e}")
 
 
 # Create FastAPI application instance

@@ -5,6 +5,7 @@ This module handles incoming webhook requests from payment processors like Razor
 validates the data, stores transactions, and triggers background processing with
 proper idempotency handling.
 """
+import asyncio
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
 from pydantic import BaseModel, Field
 from typing import Optional
@@ -86,13 +87,24 @@ async def receive_transaction_webhook(
             raise HTTPException(status_code=400, detail=error_message)
         
         # Check if transaction already exists (idempotency check)
-        existing_transaction = await db_client.get_transaction(request.transaction_id)
+        # Use webhook path timeout (3 seconds) for fast response
+        existing_transaction = await db_client.get_transaction(
+            request.transaction_id,
+            timeout=3.0  # Fast lookup for webhook acknowledgment
+        )
         
         if existing_transaction:
-            # Transaction already exists, return accepted without reprocessing
-            return ResponseFormatter.accepted(
-                f"Transaction {request.transaction_id} already received and processed"
-            )
+            # Transaction already exists, return appropriate message based on status
+            transaction_status = existing_transaction.get("status", "UNKNOWN")
+            
+            if transaction_status == "PROCESSED":
+                message = f"Transaction {request.transaction_id} already received and fully processed"
+            elif transaction_status == "PROCESSING":
+                message = f"Transaction {request.transaction_id} is already being processed"
+            else:
+                message = f"Transaction {request.transaction_id} already exists with status: {transaction_status}"
+            
+            return ResponseFormatter.accepted(message)
         
         # Prepare transaction record for database
         transaction_record = {
@@ -102,8 +114,11 @@ async def receive_transaction_webhook(
             "processed_at": None
         }
         
-        # Store transaction in database
-        created_transaction = await db_client.create_transaction(transaction_record)
+        # Store transaction in database with webhook timeout
+        await db_client.create_transaction(
+            transaction_record,
+            timeout=3.0  # Fast insert for webhook acknowledgment
+        )
         
         # Add background processing task
         background_tasks.add_task(
@@ -116,6 +131,14 @@ async def receive_transaction_webhook(
         return ResponseFormatter.accepted(
             f"Transaction {request.transaction_id} accepted for processing"
         )
+    
+    except asyncio.TimeoutError:
+        # Database operation timed out
+        print(f"Database timeout for transaction {request.transaction_id}")
+        raise HTTPException(
+            status_code=503,
+            detail="Database operation timed out. Please retry the request."
+        )
         
     except HTTPException:
         # Re-raise HTTP exceptions
@@ -123,6 +146,7 @@ async def receive_transaction_webhook(
         
     except Exception as e:
         # Handle unexpected errors
+        print(f"Unexpected error processing webhook for {request.transaction_id}: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail=f"Internal server error while processing webhook: {str(e)}"

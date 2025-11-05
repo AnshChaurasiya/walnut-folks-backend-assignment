@@ -4,6 +4,7 @@ Transaction status query endpoint.
 This module provides endpoints to query the status and details of transactions
 that have been processed through the webhook service.
 """
+import asyncio
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 from typing import Optional
@@ -61,6 +62,14 @@ async def get_transaction_status(
         
         # Format and return transaction data
         return format_transaction_response(transaction)
+    
+    except asyncio.TimeoutError:
+        # Database operation timed out
+        print(f"Database timeout fetching transaction {transaction_id}")
+        raise HTTPException(
+            status_code=503,
+            detail="Database operation timed out. Please retry the request."
+        )
         
     except HTTPException:
         # Re-raise HTTP exceptions
@@ -68,6 +77,7 @@ async def get_transaction_status(
         
     except Exception as e:
         # Handle unexpected errors
+        print(f"Unexpected error fetching transaction {transaction_id}: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail=f"Internal server error while fetching transaction: {str(e)}"

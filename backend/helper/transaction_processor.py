@@ -37,7 +37,8 @@ async def process_transaction_background(
         print(f"Starting background processing for transaction: {transaction_id}")
         
         # Verify transaction exists before processing
-        transaction = await db_client.get_transaction(transaction_id)
+        # No timeout for background operations - can wait as long as needed
+        transaction = await db_client.get_transaction(transaction_id, timeout=None)
         if not transaction:
             print(f"Transaction {transaction_id} not found in database")
             return False
@@ -57,11 +58,14 @@ async def process_transaction_background(
         
         if processing_result["success"]:
             # Update transaction status to PROCESSED
+            # No timeout for background operations - retries will handle failures
             processed_at = get_current_timestamp()
             success = await db_client.update_transaction_status(
                 transaction_id=transaction_id,
                 status="PROCESSED",
-                processed_at=processed_at
+                processed_at=processed_at,
+                use_timeout=False,  # Background operation - can take as long as needed
+                max_retries=5  # More retries for background operations
             )
             
             if success:
